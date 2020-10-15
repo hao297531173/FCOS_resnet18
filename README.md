@@ -1,6 +1,20 @@
 # FCOS_resnet18
  FCOS代码的复现，backbone使用的是resnet18
 
+
+
+**network.py**里面写的是网络架构
+
+**loss.py**里面写的是损失函数
+
+**train.py**是训练网络的函数
+
+**dataload.py**是加载coco数据集的函数，你需要根据自己的情况修改加载文件的路径
+
+**eval.py**是对模型进行评估的函数
+
+
+
 这段代码是复现fcos的代码，backbone使用了resnet18
 主要分为两个部分
 
