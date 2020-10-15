@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
-import myFCOS.network as network
+import network
 """
 这个脚本用来计算损失函数
 """

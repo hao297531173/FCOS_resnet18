@@ -14,7 +14,7 @@ import os
 """
 # 测试
 EPOCHES = 24
-BATCH_SIZE = 8
+BATCH_SIZE = 2
 LINUX = 1
 LEARNING_RATE = 0.01
 GPU = 1

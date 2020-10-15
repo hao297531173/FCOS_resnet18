@@ -5,7 +5,7 @@ from tqdm import tqdm
 from torchvision.datasets import CocoDetection
 from torchvision import transforms
 import cv2
-import myFCOS.network as network
+import network
 import torch
 
 

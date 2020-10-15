@@ -3,8 +3,7 @@ from torch import nn
 import torch.nn.functional as f
 import torchvision.models as models
 import numpy as np
-import myFCOS.loss as loss
-
+import loss
 """
 这个文件是网络的架构
 """
@@ -17,7 +16,7 @@ import myFCOS.loss as loss
 class FCOS_18(nn.Module):
 
     # 构造函数
-    def __init__(self,p_stage_num=5, class_num=80,  MODEL_ROOT="../model/resnet18-5c106cde.pth", feature=256):
+    def __init__(self,p_stage_num=5, class_num=80,  MODEL_ROOT="./model/resnet18-5c106cde.pth", feature=256):
         super().__init__()
         self.p_stage_num = p_stage_num
         self.class_num = class_num
