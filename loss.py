@@ -292,6 +292,8 @@ class LossFunction(nn.Module):
         for batch_index in range(batch_size):
             pred_pos = preds[batch_index][mask[batch_index]]
             target_pos = targets[batch_index][mask[batch_index]]
+            # print("mask[batch_index]->num " + str(torch.sum(mask[batch_index]>0)))
+            # print("pred_pos->shape "+str(pred_pos.shape))
             loss_item = f.binary_cross_entropy_with_logits(pred_pos.cpu(), target_pos.cpu(), reduction="sum").view(1)
             loss.append(loss_item)
         # print("cnt_loss-->" + str(torch.cat(loss, dim=0)))
