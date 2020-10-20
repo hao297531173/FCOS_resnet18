@@ -13,7 +13,7 @@ import os
 超参数设定
 """
 # 测试
-EPOCHES = 30
+EPOCHES = 24
 BATCH_SIZE = 8
 LINUX = 1
 LEARNING_RATE = 0.01
@@ -74,6 +74,8 @@ class Boot(object):
         self.net = network.FCOS_18()
         # 加载优化器
         self.optimizer = torch.optim.SGD(self.net.parameters(), lr=opt.lr, momentum=0.9, weight_decay=0.0001)
+        # 表示当前训练的轮次偏移量
+        self.offset = 0
         # 加载损失函数
         if(opt.gpu==1):
             self.lossFunction = loss.LossFunction(gpu=1)
@@ -84,24 +86,40 @@ class Boot(object):
             self.net = self.net.to(self.device)
             self.lossFunction = self.lossFunction.to(self.device)
 
+        if os.path.exists("./checkpoint"):
+            print("读取检查点信息")
+            filename = os.listdir("./checkpoint")
+            
+            with open("checkpoint.txt", "r") as f:
+                lines = f.readlines()
+                self.offset = int(lines[0].split("=")[-1])
+                    
 
-        # 删除checkpoint的文件
-        if not os.path.exists("./checkpoint"):
+            if(self.offset==-1):
+                self.offset = 0
+                
+                # 删除checkpoint的文件
+                if not os.path.exists("./checkpoint"):
+                    os.mkdir("./checkpoint")
+                dirs = os.listdir("./checkpoint")
+
+
+                if (len(dirs)!=0):  # 如果文件夹不空
+                    # 删除之前保存的模型
+                    for dir in dirs:
+                        if(dir.split(".")[-1] == "pth"):
+                            os.remove("./checkpoint/"+dir)
+
+                dirs = os.listdir("./")
+                for dir in dirs:
+                    if(dir == "checkpoint.txt"):
+                        os.remove("./checkpoint.txt")
+            else:  # 加载模型，继续训练
+                self.net.load_state_dict(torch.load("./checkpoint/"+filename[0]))
+                print("加载模型完毕，模型路径为："+"./checkpoint/"+filename[0])
+        else:
             os.mkdir("./checkpoint")
-        dirs = os.listdir("./checkpoint")
-
-
-        if (len(dirs)!=0):  # 如果文件夹不空
-            # 删除之前保存的模型
-            for dir in dirs:
-                if(dir.split(".")[-1] == "pth"):
-                    os.remove("./checkpoint/"+dir)
-
-        dirs = os.listdir("./")
-        for dir in dirs:
-            if(dir == "checkpoint.txt"):
-                os.remove("./checkpoint.txt")
-
+        print("读取checkpoint信息，得到上次训练的轮次为第%d轮"%(self.offset))
         print("训练器初始化完成，✿✿ヽ(°▽°)ノ✿")
 
     # 返回每轮的训练信息
@@ -209,10 +227,10 @@ class Boot(object):
 
         # 将epoch写入txt文件
         with open("checkpoint.txt", "w") as f:
-            f.write("epoch=" + str(epoch))
+            f.write("epoch=" + str(epoch+self.offset))
 
         # 保存新模型
-        save_path = prefix + "checkpoint_"+str(epoch) + ".pth"
+        save_path = prefix + "checkpoint_"+str(epoch+self.offset) + ".pth"
         torch.save(self.net.state_dict(), save_path)
         print("epoch %d:保存检查点成功，ヾ(◍°∇°◍)ﾉﾞ"%(epoch))
 
@@ -261,12 +279,9 @@ class Boot(object):
 
     # offset表示前面已经训练了多少轮
     # 当offset=-1的时候就表示是刚刚开始训练
-    def train(self, offset=-1, is_val=False, test=0):
-        print("开始训练，ヾ(◍°∇°◍)ﾉﾞ")
-        if(offset != -1):
-            epoches = self.EPOCHES-offset-1
-        else:
-            epoches = self.EPOCHES
+    def train(self, is_val=False, test=0):
+        print("开始训练，ヾ(◍°∇°◍)ﾉﾞ，从第%d轮开始，一共训练%d轮"%(self.offset, self.EPOCHES))
+        epoches = self.EPOCHES-self.offset
         for epoch in range(epoches):
             _total_loss = 0
             _cls_loss = 0
@@ -299,7 +314,11 @@ class Boot(object):
                 loss.backward()
                 self.optimizer.step()
                 num_loss += 1
-
+                end_time = time.time()
+                cost_time = int(end_time-start_time)
+                if(step%5000==0 and step!=0):
+                    print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,
+                               _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
                 if(test == 1):
                     break
             # 将每一轮的损失值保存
@@ -310,9 +329,9 @@ class Boot(object):
 
             end_time = time.time()
             cost_time = int(end_time-start_time)
-            print("train->"+self.getinfo(epoch, _total_loss/num_loss, _cls_loss/num_loss,
+            print("train->"+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,
                                _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
-
+            self.checkpoint(epoch)
             if(is_val==True):
                 self.val(epoch, test)
 
@@ -326,10 +345,7 @@ class Boot(object):
     # 开始函数
     def start(self, is_val=False, test=0):
         self.checkpoint(-1)
-        with open("checkpoint.txt", "r") as f:
-            line = f.readlines()
-        epoch = int(line[0].split("=")[-1])
-        self.train(epoch, is_val, test)
+        self.train(is_val, test)
 
 
 
