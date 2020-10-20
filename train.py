@@ -89,7 +89,12 @@ class Boot(object):
             self.net = self.net.to(self.device)
             self.lossFunction = self.lossFunction.to(self.device)
 
+        if(opt.restart == 1):
+            with open("checkpoint.txt", "w") as f:
+                f.write("epoch=-1")
+
         if os.path.exists("./checkpoint"):
+
             print("读取检查点信息")
             filename = os.listdir("./checkpoint")
             
