@@ -23,7 +23,7 @@ class FCOS_18(nn.Module):
         """
         加载resnet18网络作为backbone
         """
-        pretrained_net = models.resnet18(pretrained=True)
+        pretrained_net = models.resnet18(pretrained=False)
         pre = torch.load(MODEL_ROOT)
         pretrained_net.load_state_dict(pre)
         self.backbone = pretrained_net

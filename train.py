@@ -13,8 +13,8 @@ import os
 超参数设定
 """
 # 测试
-EPOCHES = 24
-BATCH_SIZE = 2
+EPOCHES = 30
+BATCH_SIZE = 8
 LINUX = 1
 LEARNING_RATE = 0.01
 GPU = 1
@@ -37,10 +37,10 @@ else:
     """
     待填
     """
-    root_train = "/home/Warehouse/yyl/datasets/data/coco/train2017"
-    root_train_ann = "/home/Warehouse/yyl/datasets/data/coco/annotations/instances_train2017.json"
-    root_val = "/home/Warehouse/yyl/datasets/data/coco/val2017"
-    root_val_ann = "/home/Warehouse/yyl/datasets/data/coco/annotations/instances_val2017.json"
+    root_train = "/home/yyl/data/coco/train2017"
+    root_train_ann = "/home/yyl/data/coco/annotations/instances_train2017.json"
+    root_val = "/home/yyl/data/coco/val2017"
+    root_val_ann = "/home/yyl/data/coco/annotations/instances_val2017.json"
 
 # 所有训练的函数都写在这个类里面
 class Boot(object):
