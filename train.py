@@ -25,6 +25,8 @@ parser.add_argument("--batch", type=int, default=BATCH_SIZE)
 parser.add_argument("--linux", type=int, default=LINUX)
 parser.add_argument("--lr", type=int, default=LEARNING_RATE)
 parser.add_argument("--gpu", type=int, default=GPU)
+# 不读取checkpoint，重新开始训练
+parser.add_argument("--restart", type=int, default=0)
 opt = parser.parse_args()
 
 # 设定路径
@@ -344,7 +346,8 @@ class Boot(object):
 
     # 开始函数
     def start(self, is_val=False, test=0):
-        self.checkpoint(-1)
+        if(opt.restart==1):
+            self.checkpoint(-1)
         self.train(is_val, test)
 
 
