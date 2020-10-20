@@ -16,7 +16,7 @@ import os
 EPOCHES = 24
 BATCH_SIZE = 8
 LINUX = 1
-LEARNING_RATE = 0.01
+LR = 0.01
 GPU = 1
 RESTART = 0
 
@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=EPOCHES)
 parser.add_argument("--batch", type=int, default=BATCH_SIZE)
 parser.add_argument("--linux", type=int, default=LINUX)
-parser.add_argument("--lr", type=int, default=LEARNING_RATE)
+parser.add_argument("--lr", type=float, default=LR)
 parser.add_argument("--gpu", type=int, default=GPU)
 # 不读取checkpoint，重新开始训练
 parser.add_argument("--restart", type=int, default=RESTART)
@@ -32,10 +32,11 @@ opt = parser.parse_args()
 
 # 设定路径
 if(opt.linux==0):
-    root_train = "../data/coco/train2017"
-    root_train_ann = "../data/coco/annotations/instances_train2017.json"
-    root_val = "../data/coco/val2017"
-    root_val_ann = "../data/coco/annotations/instances_val2017.json"
+    pre = "G:/工作空间/文献/语义分割/图像分割论文/语义分割论文/FCOS/FCOS-PyTorch-37.2AP/"
+    root_train = pre+"data/coco/train2017"
+    root_train_ann = pre+"data/coco/annotations/instances_train2017.json"
+    root_val = pre+"data/coco/val2017"
+    root_val_ann = pre+"data/coco/annotations/instances_val2017.json"
 else:
     """
     待填
@@ -309,6 +310,13 @@ class Boot(object):
                 self.net(batch_img)
                 # 获取运算结果
                 output = self.net.getAll()
+
+                # 检查输出值是否有小于0的值
+                for i in range(len(output)):
+                    for j in range(len(output[i])):
+                        if((output[i][j]>0).all().item()!=1):
+                            print("网络输出存在小于等于0的值，是不是哪里有点问题呀")
+
                 # 计算损失函数
                 losses = self.lossFunction(output, [batch_bbox, batch_classes])
                 # 记录损失函数值
@@ -324,9 +332,13 @@ class Boot(object):
                 num_loss += 1
                 end_time = time.time()
                 cost_time = int(end_time-start_time)
+                print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,\
+                               _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
+                """
                 if(step%100==0 and step!=0):
                     print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,
                                _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
+                """
                 if(test == 1):
                     break
             # 将每一轮的损失值保存

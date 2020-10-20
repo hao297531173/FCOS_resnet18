@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as f
 import network
+import numpy as np
 """
 这个脚本用来计算损失函数
 """
@@ -107,6 +108,7 @@ class LossFunction(nn.Module):
         """
         # 取最小值大于0的索引
         mask_in_gtbox = off_min > 0
+        # print("mask_in_gtbox->" + str((mask_in_gtbox==0).all()))
 
         # 判断gt_box的大小是否在该层检测范围内
         mask_in_level = (off_max>limit_range[0])&(off_max<limit_range[1])
@@ -164,11 +166,18 @@ class LossFunction(nn.Module):
         # [batch_size, h*w, 1]
         cnt_target = ((left_right_min/left_right_max)*(top_bottom_min/top_bottom_max)).sqrt()
         cnt_target = cnt_target.unsqueeze(-1)
+        
+        """
+        print(cnt_target.shape)
+        print(batch_size)
+        print(feature_area)
+        """
 
         warning = "target的维数好像不对"
         assert (reg_target.shape==(batch_size, feature_area, 4)), "reg_"+warning
         assert (cls_target.shape==(batch_size, feature_area, 1)), "cls_"+warning
         assert (cnt_target.shape==(batch_size, feature_area, 1)), "cnt_"+warning
+        
 
         # 计算target里面不取1的地方
         # [batch_size, h*w, m] -> [batch_size, h*w]
@@ -235,8 +244,10 @@ class LossFunction(nn.Module):
         class_num = preds[0].shape[1]
         # mask = [batch_size, h*w, 1]
         mask = mask.unsqueeze(dim=-1)
+        # print(mask.shape)
         # 计算每个batch需要计算的结点个数
         num_pos = torch.sum(mask, dim=[1,2]).clamp_(min=1).float()
+        # print("compute_cls_loss->num_pos="+str(num_pos))
         # 将preds改变形状->[batch_size, h*w, class_num]
         for pred in preds:
             pred = pred.permute(0,2,3,1)
@@ -267,9 +278,10 @@ class LossFunction(nn.Module):
         preds_reshape = []
         c = targets.shape[-1]
         mask = mask.unsqueeze(dim=-1)
+        # print((mask==0).all())
         # [batch_size, ]
         num_pos = torch.sum(mask, dim=[1,2]).clamp_(min=1).float()
-        # print("num_pos-->" + str(num_pos))
+        # print("compute_cnt_loss->num_pos="+str(num_pos))
         for pred in preds:
             pred = pred.permute(0,2,3,1)
             pred = torch.reshape(pred, [batch_size, -1, c])
@@ -278,8 +290,8 @@ class LossFunction(nn.Module):
         preds = torch.cat(preds_reshape, dim=1)
         loss = []
         for batch_index in range(batch_size):
-            pred_pos = preds[batch_index][mask[batch_index].long()]
-            target_pos = targets[batch_index][mask[batch_index].long()]
+            pred_pos = preds[batch_index][mask[batch_index]]
+            target_pos = targets[batch_index][mask[batch_index]]
             loss_item = f.binary_cross_entropy_with_logits(pred_pos.cpu(), target_pos.cpu(), reduction="sum").view(1)
             loss.append(loss_item)
         # print("cnt_loss-->" + str(torch.cat(loss, dim=0)))
@@ -290,19 +302,23 @@ class LossFunction(nn.Module):
     # pred = [n, 4]   ltrb
     # target = [n, 4]
     def iou_loss(self, pred, target):
+        # print(pred.shape)
+        # print(target.shape)
         # 首先要计算交集面积 area=(t+r)*(t+b)
         # 选出ltrb中小的一组值
         lt = torch.min(pred[:, :2].to(self.device), target[:, :2].to(self.device))
         rb = torch.min(pred[:, 2:].to(self.device), target[:, 2:].to(self.device))
         wh = (lt+rb).clamp(min=0)
         overlap = (wh[:, 0]*wh[:, 1]).to(self.device)
+        
         # 分别计算预测框和gt_box的面积
         area1 = ((pred[:, 0]+pred[:, 2])*(pred[:, 1]+pred[:, 3])).to(self.device)
         area2 = ((target[:, 0]+target[:, 2])*(target[:, 1]+target[:, 3])).to(self.device)
         iou = overlap/(area1+area2-overlap)
         # 类似交叉熵损失
         iou_loss = -iou.clamp(min=1e-6).log()
-        # print("iou_loss-->" + str(iou_loss))
+        #print(iou_loss.shape)
+        #print("iou_loss-->" + str(iou_loss.sum()))
         return iou_loss.sum()
 
     # 不懂这个函数为什么这么算
@@ -338,18 +354,22 @@ class LossFunction(nn.Module):
         c = targets.shape[-1]
         preds_reshape = []
         num_pos = torch.sum(mask, dim=[1]).clamp_(min=1).float()
-
+        # print(num_pos)
         for pred in preds:
             pred = pred.permute(0,2,3,1)
             pred = torch.reshape(pred, [batch_size, -1, c])
             preds_reshape.append(pred)
 
         preds = torch.cat(preds_reshape, dim=1)
+        # print("preds->shape " + str(preds.shape))
         loss = []
         for batch_index in range(batch_size):
             # [sum(h*w), 4]
-            pred_pos = preds[batch_index][mask[batch_index].long()]
-            target_pos = targets[batch_index][mask[batch_index].long()]
+            # print(mask[batch_index])
+            pred_pos = preds[batch_index][mask[batch_index]]
+            # print("mask[batch_index]->num " + str(torch.sum(mask[batch_index]>0)))
+            # print("pred_pos->shape "+str(pred_pos.shape))
+            target_pos = targets[batch_index][mask[batch_index]]
             if mode == 'iou':
                 loss.append(self.iou_loss(pred_pos, target_pos).view(1))
             elif mode == 'giou':
@@ -367,11 +387,15 @@ class LossFunction(nn.Module):
     # pred [n, class_num]
     # target [n, class_num]，每一行只有一个值为1
     def focal_loss(self, preds, targets, gamma=2, alpha=0.25):
-        preds = preds.sigmoid()
+        m = nn.Softmax(dim=1)
+        preds = m(preds).to(self.device)
+        targets = targets.to(self.device)
         pt = preds*targets + (1.0-preds)*(1.0-targets)
+        # print(pt)
         w = alpha*targets + (1.0-alpha)*(1.0-targets)
+        # print(w)
         loss = -w*torch.pow((1-pt), gamma)*pt.log()
-        # print("focal_loss-->" + str(loss))
+        # print("focal_loss-->" + str(loss.sum()))
         return loss.sum()
 
 
@@ -389,7 +413,8 @@ class LossFunction(nn.Module):
         cls_targets, cnt_targets, reg_targets = targets_
         # 这里三个mask应该是共享的，cnt_targets>-1那么就代表这个点需要计算
         mask_pos = (cnt_targets > -1).squeeze(dim=-1)  # [batch_size,sum(_h*_w)]
-
+        # print("forward->num "+str(torch.sum(mask_pos>0)))
+        # print(cnt_targets)
         # 函数的返回值应该是[batch_size]，然后对他们做平均
         cls_loss = self.compute_cls_loss(cls_logits, cls_targets, mask_pos).mean()
         cnt_loss = self.compute_cnt_loss(cnt_logits, cnt_targets, mask_pos).mean()
@@ -418,15 +443,21 @@ class LossFunction(nn.Module):
 
 if __name__ == "__main__":
     # 获得网络的输出值
-    fcos = network.FCOS_18()
-    input = torch.rand(2,3,800,1024)
+    num = 1
+    function = LossFunction(gpu=0)
+    fcos = network.FCOS_18().to(function.device)
+    input = torch.rand(num,3,800,1024).to(function.device)
     fcos(input)
     output_input = fcos.getAll()
-
+    """
+    for i in range(len(output_input)):
+        for j in range(len(output_input[i])):
+            print((output_input[i][j]>0).all())
+    """
     cls, cen, reg = output_input
-    target_bbox = torch.rand(2,15,4)
-    target_cls = torch.rand(2,15)
-    function = LossFunction()
+    target_bbox = torch.rand(num,15,4)
+    target_cls = torch.rand(num,15)
+    
     losses = function(output_input, [target_bbox, target_cls], print_info=True)
     cls_loss, cnt_loss, reg_loss, total_loss = losses
 

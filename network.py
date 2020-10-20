@@ -208,9 +208,13 @@ class FCOS_18(nn.Module):
         cls_cls = self.head_cls_cls(cls)
         cls_cen = self.head_cls_cen(cls)
         reg_reg = self.head_reg_reg(reg)
+        
         # 将回归参数经过exp函数
         # 我就简单一点，直接使用exp函数
+        # 将输出值映射到(0, ∞)
         reg_reg = torch.exp(reg_reg)
+        cls_cls = torch.exp(cls_cls)
+        cls_cen = torch.exp(cls_cen)
         return [cls_cls, cls_cen, reg_reg]
 
     # 用于返回每一层的最终计算结果，输出维度为[5, 3]
