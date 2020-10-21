@@ -289,6 +289,8 @@ class LossFunction(nn.Module):
             pred_batch.append(torch.cat(pred_list, dim=0).unsqueeze(dim=0))
             # [sum(h*w), 1]
             target_batch.append(torch.cat(target_list, dim=0).unsqueeze(dim=0))
+        if(len(pred_list)==0):   # 如果这一轮没有点被选中，就直接返回0.95
+            return 0.95
         pred_batch = torch.cat(pred_batch, dim=0)
         target_batch = torch.cat(target_batch, dim=0)
         # print("pred_batch="+str(pred_batch.shape))
