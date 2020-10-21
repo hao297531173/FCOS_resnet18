@@ -42,14 +42,11 @@ class LossFunction(nn.Module):
         # 计算x和y映射到输入图像的坐标
         x = torch.arange(0, w*stride, stride, dtype=torch.float32)
         y = torch.arange(0, h*stride, stride, dtype=torch.float32)
-
         # 将x和y变成w*h的形状
         x, y = torch.meshgrid(x, y)
-
         # 将x和y拉成一维的形状
         x = torch.reshape(x, [-1])
         y = torch.reshape(y, [-1])
-
         # 计算最后的值
         coords = torch.stack([x, y], dim=-1) + stride//2
         return coords
@@ -111,7 +108,6 @@ class LossFunction(nn.Module):
         # 取最小值大于0的索引
         mask_in_gtbox = off_min > 0
 
-        # print("mask_in_gtbox->" + str((mask_in_gtbox==0).all()))
 
         # 判断gt_box的大小是否在该层检测范围内
         mask_in_level = (off_max>limit_range[0])&(off_max<limit_range[1])
@@ -127,10 +123,8 @@ class LossFunction(nn.Module):
         c_t_off = y[None, :, None] - gt_y_center[:, None, :].cpu()
         c_r_off = gt_x_center[:, None, :].cpu() - x[None, :, None]
         c_b_off = gt_y_center[:, None, :].cpu() - y[None, :, None]
-
         c_ltrb_off = torch.stack([c_l_off, c_t_off, c_r_off, c_b_off], dim=-1)
         c_off_max = torch.max(c_ltrb_off, dim=-1)[0]
-
         # 这里逻辑不要搞错了，筛选掉远离中心点的值
         mask_center = c_off_max < radiu
 
@@ -319,6 +313,7 @@ class LossFunction(nn.Module):
     # preds = [5, [batch_size, 1, h, w]] list
     # targets = [batch_size, h*w, 1]
     # mask = [batch_size, h*w]
+    # 这个函数有点问题，有时候会跑出nan
     def compute_cnt_loss(self, preds, targets, mask):
         batch_size = targets.shape[0]
         preds_reshape = []
@@ -340,6 +335,8 @@ class LossFunction(nn.Module):
             target_pos = targets[batch_index][mask[batch_index]]
             # print("mask[batch_index]->num " + str(torch.sum(mask[batch_index]>0)))
             # print("pred_pos->shape "+str(pred_pos.shape))
+            # print("pred_pos->"+str(pred_pos))
+            # print("target_pos->"+str(target_pos))
             loss_item = f.binary_cross_entropy_with_logits(pred_pos.cpu(), target_pos.cpu(), reduction="sum").view(1)
             loss.append(loss_item)
         # print("cnt_loss-->" + str(torch.cat(loss, dim=0)))
@@ -358,15 +355,12 @@ class LossFunction(nn.Module):
         rb = torch.min(pred[:, 2:].to(self.device), target[:, 2:].to(self.device))
         wh = (lt+rb).clamp(min=0)
         overlap = (wh[:, 0]*wh[:, 1]).to(self.device)
-        
         # 分别计算预测框和gt_box的面积
         area1 = ((pred[:, 0]+pred[:, 2])*(pred[:, 1]+pred[:, 3])).to(self.device)
         area2 = ((target[:, 0]+target[:, 2])*(target[:, 1]+target[:, 3])).to(self.device)
         iou = overlap/(area1+area2-overlap)
         # 类似交叉熵损失
         iou_loss = -iou.clamp(min=1e-6).log()
-        #print(iou_loss.shape)
-        #print("iou_loss-->" + str(iou_loss.sum()))
         return iou_loss.sum()
 
     # 不懂这个函数为什么这么算
@@ -471,10 +465,14 @@ class LossFunction(nn.Module):
         # print("forward->num "+str(torch.sum(mask_pos>0)))
         # print(cnt_targets)
         # 函数的返回值应该是[batch_size]，然后对他们做平均
-        cls_loss = self.compute_cls_loss(cls_logits, cls_targets, mask_pos).mean()
+        cls_loss = self.compute_cls_loss(cls_logits, cls_targets, mask_pos).mean().clamp(max=2.0)
         cnt_loss = self.compute_cnt_loss(cnt_logits, cnt_targets, mask_pos).mean().clamp(max=1.0)
-        reg_loss = self.compute_reg_loss(reg_preds, reg_targets, mask_pos).mean()
+        reg_loss = self.compute_reg_loss(reg_preds, reg_targets, mask_pos).mean().clamp(max=9.0)
 
+        if (np.isnan(cnt_loss.cpu().detach().numpy()) == True):
+            cnt_loss = torch.from_numpy(np.array([1.0]))
+        if (np.isnan(reg_loss.cpu().detach().numpy()) == True):
+            reg_loss = torch.from_numpy(np.array([9.0]))
 
         if(print_info == True):
             """
