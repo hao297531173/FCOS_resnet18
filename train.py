@@ -16,9 +16,10 @@ import os
 EPOCHES = 24
 BATCH_SIZE = 8
 LINUX = 1
-LR = 0.01
+LR = 0.001
 GPU = 1
 RESTART = 0
+STEP = 1000
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--epoch", type=int, default=EPOCHES)
@@ -28,6 +29,8 @@ parser.add_argument("--lr", type=float, default=LR)
 parser.add_argument("--gpu", type=int, default=GPU)
 # 不读取checkpoint，重新开始训练
 parser.add_argument("--restart", type=int, default=RESTART)
+# 设置多少步打印一次
+parser.add_argument("--step", type=int, default=STEP)
 opt = parser.parse_args()
 
 # 设定路径
@@ -136,7 +139,7 @@ class Boot(object):
         info  = "epoch %d: total_loss: %.4f cls_loss: %.4f, cnt_loss: %.4f, reg_loss: %.4f"%\
                 (epoch, total_loss, cls_loss, cnt_loss, reg_loss)
         info = info + " cost time: %dh: %dm: %ds"%\
-               (cost_time/3600, cost_time%3600//60, cost_time%3600)
+               (cost_time/3600, cost_time%3600//60, cost_time%60)
         return info
 
     # 绘图
@@ -311,12 +314,19 @@ class Boot(object):
                 # 获取运算结果
                 output = self.net.getAll()
 
+                """
                 # 检查输出值是否有小于0的值
                 for i in range(len(output)):
                     for j in range(len(output[i])):
                         if((output[i][j]>0).all().item()!=1):
-                            print("网络输出存在小于等于0的值，是不是哪里有点问题呀")
-
+                            output[i][j].clamp(min=0.00001, max=1)
+                            if((output[i][j]==0).all().item()!=1 and (output[i][j]==0).all().item()!=1):
+                                print("网络输出存在小于等于0的值，是不是哪里有点问题呀")
+                            elif((output[i][j]==0).all().item()!=1):
+                                print("网络输出存在等于0的值，是不是哪里有点问题呀")
+                            elif((output[i][j]==0).all().item()!=1):
+                                print("网络输出存在小于等于0的值，是不是哪里有点问题呀")
+                """
                 # 计算损失函数
                 losses = self.lossFunction(output, [batch_bbox, batch_classes])
                 # 记录损失函数值
@@ -332,13 +342,13 @@ class Boot(object):
                 num_loss += 1
                 end_time = time.time()
                 cost_time = int(end_time-start_time)
-                print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,\
-                               _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
-                """
-                if(step%100==0 and step!=0):
+                #print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,\
+                #              _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
+
+                if(step%opt.step==0 and step!=0):
                     print("step%d ->"%(step)+self.getinfo(epoch+self.offset, _total_loss/num_loss, _cls_loss/num_loss,
                                _cnt_loss/num_loss, _reg_loss/num_loss, cost_time))
-                """
+
                 if(test == 1):
                     break
             # 将每一轮的损失值保存

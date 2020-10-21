@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as f
 import network
 import numpy as np
+import dataload
 """
 这个脚本用来计算损失函数
 """
@@ -71,6 +72,7 @@ class LossFunction(nn.Module):
         cls_feature = cls_feature.permute(0,2,3,1)  # [batch_size, h, w, class_num]
         # 计算坐标值
         coords = self.feature2input(cls_feature, stride)
+
         cls_feature = cls_feature.reshape((batch_size, -1, class_num)) # [batch_size, h*w, class_num]
         cnt_feature = cen_feature.permute(0,2,3,1)  # [batch_size, h. w. 1]
         cnt_feature = cen_feature.reshape((batch_size, -1, 1))
@@ -108,6 +110,7 @@ class LossFunction(nn.Module):
         """
         # 取最小值大于0的索引
         mask_in_gtbox = off_min > 0
+
         # print("mask_in_gtbox->" + str((mask_in_gtbox==0).all()))
 
         # 判断gt_box的大小是否在该层检测范围内
@@ -131,8 +134,16 @@ class LossFunction(nn.Module):
         # 这里逻辑不要搞错了，筛选掉远离中心点的值
         mask_center = c_off_max < radiu
 
+
         # mask_pos就是最终的结果
         mask_pos = mask_in_gtbox & mask_in_level & mask_center
+        """
+        print("mask_pos->" + str(mask_pos.shape))
+        print("mask_center->" + str(mask_center.shape))
+        print("mask_in_level->" + str(mask_in_gtbox.shape))
+        print("mask_in_gtbox->" + str(mask_in_gtbox.shape))
+        print("coords->" + str(coords.shape))
+        """
 
         # ~表示取反，就是将0的区域设置一个非常大的值
         areas[~mask_pos] = 999999999
@@ -244,10 +255,13 @@ class LossFunction(nn.Module):
         class_num = preds[0].shape[1]
         # mask = [batch_size, h*w, 1]
         mask = mask.unsqueeze(dim=-1)
-        # print(mask.shape)
         # 计算每个batch需要计算的结点个数
         num_pos = torch.sum(mask, dim=[1,2]).clamp_(min=1).float()
-        # print("compute_cls_loss->num_pos="+str(num_pos))
+
+        #######################
+        # 打印需要计算的结点个数
+        ######################
+        # print("需要计算结点个数: "+str(int(num_pos[0].item())))
         # 将preds改变形状->[batch_size, h*w, class_num]
         for pred in preds:
             pred = pred.permute(0,2,3,1)
@@ -255,15 +269,45 @@ class LossFunction(nn.Module):
             preds_reshape.append(pred)
         # [batch_size, sum(h*w), class_num]
         preds = torch.cat(preds_reshape, dim=1)
+
         warning = "compute_cls_loss-->reds的维数和targets的维数不一样"
         assert (preds.shape[:2]==targets.shape[:2]), warning
+
+
+        # 筛选出需要计算的点
+        pred_list = []
+        target_list = []
+        pred_batch = []
+        target_batch = []
+        for batch_size in range(len(mask)):
+            for idx in range(len(mask[0])):
+                if(mask[0][idx][0]>0):
+                    pred_list.append(preds[batch_size][idx].unsqueeze(dim=0))
+                    # print("pred[batch_size][idx].shape="+str(preds[batch_size][idx].unsqueeze(dim=0).shape))
+                    target_list.append(targets[batch_size][idx].unsqueeze(dim=0))
+            # [sum(h*w), class_num]
+            pred_batch.append(torch.cat(pred_list, dim=0).unsqueeze(dim=0))
+            # [sum(h*w), 1]
+            target_batch.append(torch.cat(target_list, dim=0).unsqueeze(dim=0))
+        pred_batch = torch.cat(pred_batch, dim=0)
+        target_batch = torch.cat(target_batch, dim=0)
+        # print("pred_batch="+str(pred_batch.shape))
+        # print("target_batch="+str(target_batch.shape))
+
         # 计算损失值
         loss = []
-        for batch_index in range(batch_size):
-            pred_pos = preds[batch_index]  # [sum(_h*_w),class_num]
-            target_pos = targets[batch_index]  # [sum(_h*_w),1]
+        for batch_index in range(len(pred_batch)):
+            pred_pos = pred_batch[batch_index]  # [sum(_h*_w),class_num]
+            # print(pred_pos.shape)
+            target_pos = target_batch[batch_index]  # [sum(_h*_w),1]
+
+            # print(target_pos.shape)
+            # print("target_pos.shape->"+str(target_pos.shape))
+            # print("target_pos->" + str(targets[batch_index][targets[batch_index]>0]))
             # target_pos = [sum(h*w), class_num]也就是说变成了sum(h*w)行的onehot
-            target_pos = (torch.arange(1, class_num + 1, device=target_pos.device)[None,:]==target_pos.long()).float()
+            target_pos = (torch.arange(1, class_num + 1, device=target_pos.device)[None,:]==target_pos).float()
+
+            # print(torch.sum(target_pos>0))
             loss.append(self.focal_loss(pred_pos, target_pos).view(1))
 
         return torch.cat(loss, dim=0).to(self.device) / num_pos.to(self.device)  # [batch_size,]
@@ -388,12 +432,19 @@ class LossFunction(nn.Module):
     # Focal loss
     # pred [n, class_num]
     # target [n, class_num]，每一行只有一个值为1
+
+    """
+    这里需要注意，计算的时候有可能标签值很小，导致损失值趋近于无穷大
+    """
     def focal_loss(self, preds, targets, gamma=2, alpha=0.25):
         m = nn.Softmax(dim=1)
         preds = m(preds).to(self.device)
+        # 进行clamp，防止出现nan
+        preds = preds.clamp(min=0.0001, max=0.9999)
         targets = targets.to(self.device)
         pt = preds*targets + (1.0-preds)*(1.0-targets)
-        # print(pt)
+        # pt = m(pt)
+        # print("pt->" + str(pt))
         w = alpha*targets + (1.0-alpha)*(1.0-targets)
         # print(w)
         loss = -w*torch.pow((1-pt), gamma)*pt.log()
@@ -419,7 +470,7 @@ class LossFunction(nn.Module):
         # print(cnt_targets)
         # 函数的返回值应该是[batch_size]，然后对他们做平均
         cls_loss = self.compute_cls_loss(cls_logits, cls_targets, mask_pos).mean()
-        cnt_loss = self.compute_cnt_loss(cnt_logits, cnt_targets, mask_pos).mean()
+        cnt_loss = self.compute_cnt_loss(cnt_logits, cnt_targets, mask_pos).mean().clamp(max=1.0)
         reg_loss = self.compute_reg_loss(reg_preds, reg_targets, mask_pos).mean()
 
 
@@ -429,9 +480,10 @@ class LossFunction(nn.Module):
             cnt_loss-->tensor([11854.7461, 11941.8975], grad_fn=<DivBackward0>)
             reg_loss-->tensor([235746.9688, 235746.9688], grad_fn=<DivBackward0>)
             """
-            print("cls_loss-->" + str(self.compute_cls_loss(cls_logits, cls_targets, mask_pos)))
-            print("cnt_loss-->" + str(self.compute_cnt_loss(cnt_logits, cnt_targets, mask_pos)))
-            print("reg_loss-->" + str(self.compute_reg_loss(reg_preds, reg_targets, mask_pos)))
+
+            print("cls_loss-->" + str(cls_loss))
+            print("cnt_loss-->" + str(cnt_loss))
+            print("reg_loss-->" + str(reg_loss))
 
         if self.add_centerness:
             total_loss = cls_loss + cnt_loss + reg_loss
@@ -448,7 +500,20 @@ if __name__ == "__main__":
     num = 1
     function = LossFunction(gpu=0)
     fcos = network.FCOS_18().to(function.device)
-    input = torch.rand(num,3,800,1024).to(function.device)
+    dataset = dataload.COCOdataset(is_train=False)
+    train_loader = torch.utils.data.DataLoader(dataset, batch_size=num, shuffle=True,
+                                               collate_fn=dataset.collate_fn)
+    input = None
+    target_bbox = None
+    target_cls = None
+    for data in train_loader:
+        input = data[0].to(function.device)
+        target_bbox = data[1].to(function.device)
+        target_cls = data[2].to(function.device)
+        break
+    # print(target_bbox.shape)
+    # print(target_cls)
+
     fcos(input)
     output_input = fcos.getAll()
     """
@@ -457,17 +522,6 @@ if __name__ == "__main__":
             print((output_input[i][j]>0).all())
     """
     cls, cen, reg = output_input
-    target_bbox = torch.rand(num,15,4)
-    target_cls = torch.rand(num,15)
     
     losses = function(output_input, [target_bbox, target_cls], print_info=True)
     cls_loss, cnt_loss, reg_loss, total_loss = losses
-
-    """
-    # torch.Size([2, 17064, 1])
-    # torch.Size([2, 17064, 1])
-    # torch.Size([2, 17064, 4])
-    print(cls_targets_tensor.shape)
-    print(cen_targets_tensor.shape)
-    print(reg_targets_tensor.shape)
-    """

@@ -33,7 +33,7 @@ class COCOdataset(CocoDetection):
     'book', 'clock', 'vase', 'scissors', 'teddy bear',
     'hair drier', 'toothbrush')
 
-    prefix = "../data/coco/"
+    prefix = "G:/工作空间/文献/语义分割/图像分割论文/语义分割论文/FCOS/FCOS-PyTorch-37.2AP/data/coco/"
 
     def __init__(self, img_path=None, ann_path=None, resize_size=[800,1333],is_train = True, transform=None):
 
@@ -279,7 +279,7 @@ if __name__ == "__main__":
     for data in train_loader:
         print(data[0].shape)
         print(data[1].shape)
-        print(data[2].shape)
+        print(data[2])
         break
 
     print("跑通啦\(^o^)/~")
