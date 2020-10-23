@@ -1,4 +1,5 @@
 # FCOS_resnet18
+
  FCOS代码的复现，backbone使用的是resnet18
 
 
@@ -39,5 +40,16 @@
 训练好模型后使用eval.py进行coco评估，里面有一个阈值需要自己设定
 脚本里面默认是阈值是0.5，你需要测试多少阈值就直接设置然后跑就行了
 
-服务器上的硬盘空间不够，所有目前还没有将coco数据集上传
+
+
+运行代码命令
+
+```bash
+# 使用gpu，在服务器上运行
+python train.py --linux=1 --gpu=1 --restart=1
+# 使用cpu进行测试
+python train.py --linux=0 --step=10 --batch=1 --gpu=0 --restart=1
+```
+
+
 
